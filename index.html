@@ -1393,6 +1393,17 @@
   </div>
 </div>
 
+<div class="context-menu" id="preset-context-menu">
+  <div class="context-item" onclick="openPresetFromMenu()">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 3l14 9-14 9V3z"/></svg>
+    Открыть
+  </div>
+  <div class="context-item" onclick="exportPresetFromMenu()">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 19h16"/></svg>
+    Скачать txt
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1811,10 +1822,16 @@ function startPresetLongPress(event, id) {
   cancelPresetLongPress();
   const point = event.touches?.[0] || event.changedTouches?.[0] || event;
   if (!point) return;
+  const x = point.clientX;
+  const y = point.clientY;
   presetLongPressTimer = setTimeout(() => {
     presetClickSuppressed = true;
-    const preset = presets.find(p => p.id === id);
-    if (preset) exportPresetAsText(preset);
+    openPresetContextMenu({
+      clientX: x,
+      clientY: y,
+      preventDefault() {},
+      stopPropagation() {}
+    }, id);
   }, 550);
 }
 
@@ -1840,6 +1857,13 @@ function closePresetContextMenuOnce() {
   document.removeEventListener('click', closePresetContextMenuOnce);
   presetContextId = null;
   presetClickSuppressed = false;
+}
+
+function openPresetFromMenu() {
+  const preset = presets.find(p => p.id === presetContextId);
+  closePresetContextMenuOnce();
+  if (!preset) return;
+  loadPreset(preset.id);
 }
 
 async function exportPresetFromMenu() {
@@ -1889,9 +1913,31 @@ async function exportPresetAsText(preset) {
   const text = buildPresetText(preset);
   const fileName = `${sanitizeFileName(preset.name || 'preset')}.txt`;
   const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+
+  try {
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{
+          description: 'Text file',
+          accept: { 'text/plain': ['.txt'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showToast('Пресет сохранён в файл');
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    console.warn('Preset save picker failed, falling back to download:', err);
+  }
+
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = fileName;
+  a.rel = 'noopener';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
   showToast('Пресет сохранён в файл');
